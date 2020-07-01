@@ -204,7 +204,7 @@ void handleReceived_Data(Isolate *isolate, SIMCONNECT_RECV *pData, DWORD cbData)
 				return;
 			}
 
-			v8::Local<v8::String> key = String::NewFromUtf8(isolate, valIds.at(i).c_str());
+			v8::Local<v8::String> key = String::NewFromUtf8(isolate, valIds.at(i).c_str()).FromMaybe(v8::Local<v8::String>());
 			try
 			{
 				v8::Local<v8::String> value = String::NewFromOneByte(isolate, (const uint8_t *)pOutString, v8::NewStringType::kNormal).ToLocalChecked();
@@ -212,7 +212,7 @@ void handleReceived_Data(Isolate *isolate, SIMCONNECT_RECV *pData, DWORD cbData)
 			}
 			catch (...)
 			{
-				v8::Local<v8::String> value = String::NewFromUtf8(isolate, "ERROR");
+				v8::Local<v8::String> value = String::NewFromUtf8(isolate, "ERROR").FromMaybe(v8::Local<v8::String>());
 				result_list->Set(key, value);
 			}
 
@@ -224,7 +224,7 @@ void handleReceived_Data(Isolate *isolate, SIMCONNECT_RECV *pData, DWORD cbData)
 			varSize = sizeMap[valTypes[i]];
 			char *p = ((char *)(&pObjData->dwData) + dataValueOffset);
 			double *var = (double *)p;
-			result_list->Set(String::NewFromUtf8(isolate, valIds.at(i).c_str()), Number::New(isolate, *var));
+			result_list->Set(String::NewFromUtf8(isolate, valIds.at(i).c_str()).FromMaybe(v8::Local<v8::String>()), Number::New(isolate, *var));
 		}
 		dataValueOffset += varSize;
 	}
@@ -277,7 +277,7 @@ void handle_Error(Isolate *isolate, NTSTATUS code)
 
 	const int argc = 1;
 	Local<Value> argv[argc] = {
-		String::NewFromUtf8(isolate, errorCode)};
+		String::NewFromUtf8(isolate, errorCode).FromMaybe(v8::Local<v8::String>())};
 
 	errorCallback->Call(isolate->GetCurrentContext()->Global(), argc, argv);
 }
@@ -298,12 +298,12 @@ void handleReceived_Exception(Isolate *isolate, SIMCONNECT_RECV *pData, DWORD cb
 	SIMCONNECT_RECV_EXCEPTION *except = (SIMCONNECT_RECV_EXCEPTION *)pData;
 
 	Local<Object> obj = Object::New(isolate);
-	obj->Set(String::NewFromUtf8(isolate, "dwException"), Number::New(isolate, except->dwException));
-	obj->Set(String::NewFromUtf8(isolate, "dwSendID"), Number::New(isolate, except->dwSendID));
-	obj->Set(String::NewFromUtf8(isolate, "dwIndex"), Number::New(isolate, except->dwIndex));
-	obj->Set(String::NewFromUtf8(isolate, "cbData"), Number::New(isolate, cbData));
-	obj->Set(String::NewFromUtf8(isolate, "cbVersion"), Number::New(isolate, except->dwException));
-	obj->Set(String::NewFromUtf8(isolate, "name"), String::NewFromUtf8(isolate, exceptionNames[SIMCONNECT_EXCEPTION(except->dwException)]));
+	obj->Set(String::NewFromUtf8(isolate, "dwException").FromMaybe(v8::Local<v8::String>()), Number::New(isolate, except->dwException));
+	obj->Set(String::NewFromUtf8(isolate, "dwSendID").FromMaybe(v8::Local<v8::String>()), Number::New(isolate, except->dwSendID));
+	obj->Set(String::NewFromUtf8(isolate, "dwIndex").FromMaybe(v8::Local<v8::String>()), Number::New(isolate, except->dwIndex));
+	obj->Set(String::NewFromUtf8(isolate, "cbData").FromMaybe(v8::Local<v8::String>()), Number::New(isolate, cbData));
+	obj->Set(String::NewFromUtf8(isolate, "cbVersion").FromMaybe(v8::Local<v8::String>()), Number::New(isolate, except->dwException));
+	obj->Set(String::NewFromUtf8(isolate, "name").FromMaybe(v8::Local<v8::String>()), String::NewFromUtf8(isolate, exceptionNames[SIMCONNECT_EXCEPTION(except->dwException)]).FromMaybe(v8::Local<v8::String>()));
 
 	Local<Value> argv[1] = {obj};
 
@@ -315,7 +315,7 @@ void handleReceived_Filename(Isolate *isolate, SIMCONNECT_RECV *pData, DWORD cbD
 	SIMCONNECT_RECV_EVENT_FILENAME *fileName = (SIMCONNECT_RECV_EVENT_FILENAME *)pData;
 	const int argc = 1;
 	Local<Value> argv[argc] = {
-		String::NewFromUtf8(isolate, (const char *)fileName->szFileName)};
+		String::NewFromUtf8(isolate, (const char *)fileName->szFileName).FromMaybe(v8::Local<v8::String>())};
 
 	systemEventCallbacks[fileName->uEventID]->Call(isolate->GetCurrentContext()->Global(), argc, argv);
 }
@@ -331,7 +331,7 @@ void handleReceived_Open(Isolate *isolate, SIMCONNECT_RECV *pData, DWORD cbData)
 
 	Local<Value> argv[argc] = {
 		String::NewFromOneByte(isolate, (const uint8_t *)pOpen->szApplicationName, v8::NewStringType::kNormal).ToLocalChecked(),
-		String::NewFromUtf8(isolate, simconnVersion)};
+		String::NewFromUtf8(isolate, simconnVersion).FromMaybe(v8::Local<v8::String>())};
 
 	systemEventCallbacks[openEventId]->Call(isolate->GetCurrentContext()->Global(), argc, argv);
 }
@@ -341,9 +341,9 @@ void handleReceived_SystemState(Isolate *isolate, SIMCONNECT_RECV *pData, DWORD 
 	SIMCONNECT_RECV_SYSTEM_STATE *pState = (SIMCONNECT_RECV_SYSTEM_STATE *)pData;
 
 	Local<Object> obj = Object::New(isolate);
-	obj->Set(String::NewFromUtf8(isolate, "integer"), Number::New(isolate, pState->dwInteger));
-	obj->Set(String::NewFromUtf8(isolate, "float"), Number::New(isolate, pState->fFloat));
-	obj->Set(String::NewFromUtf8(isolate, "string"), String::NewFromUtf8(isolate, "string"));
+	obj->Set(String::NewFromUtf8(isolate, "integer").FromMaybe(v8::Local<v8::String>()), Number::New(isolate, pState->dwInteger));
+	obj->Set(String::NewFromUtf8(isolate, "float").FromMaybe(v8::Local<v8::String>()), Number::New(isolate, pState->fFloat));
+	obj->Set(String::NewFromUtf8(isolate, "string").FromMaybe(v8::Local<v8::String>()), String::NewFromUtf8(isolate, "string").FromMaybe(v8::Local<v8::String>()));
 
 	Local<Value> argv[1] = {obj};
 	systemStateCallbacks[openEventId]->Call(isolate->GetCurrentContext()->Global(), 1, argv);
