@@ -28,14 +28,14 @@ nodeSimconnect.dataRequestFlag = {
 };
 
 nodeSimconnect.datatype = {
-	INVALID: 0,  
-	INT32: 1,    
-	INT64: 2,    
-	FLOAT32: 3,  
-	FLOAT64: 4,  
-	STRING8: 5,  
-	STRING32: 6, 
-	STRING64: 7, 
+	INVALID: 0,
+	INT32: 1,
+	INT64: 2,
+	FLOAT32: 3,
+	FLOAT64: 4,
+	STRING8: 5,
+	STRING32: 6,
+	STRING64: 7,
 	STRING128: 8,
 	STRING256: 9,
 	STRING260: 10,
