@@ -8,6 +8,7 @@ try {
     nodeSimconnect = require(`./build/Release/node-simconnect`);
     console.info(`node-simconnect: Manual build loaded`);
 } catch (ex) {
+	throw ex
     // If it fails, load the included binary
     console.info(`node-simconnect: Loading pre-built binary`);
     if (process.arch === `x64`) {
