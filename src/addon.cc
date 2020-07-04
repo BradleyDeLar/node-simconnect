@@ -424,6 +424,30 @@ void isConnected(const v8::FunctionCallbackInfo<v8::Value> &args)
 	args.GetReturnValue().Set(v8::Boolean::New(isolate, ghSimConnect));
 }
 
+void Text(const v8::FunctionCallbackInfo<v8::Value> &args)
+{
+	if (ghSimConnect)
+	{
+		Isolate *isolate = args.GetIsolate();
+		v8::Local<v8::Context> ctx = Nan::GetCurrentContext();
+		v8::String::Utf8Value message(isolate, args[0]->ToString(ctx).ToLocalChecked());
+
+		SIMCONNECT_CLIENT_EVENT_ID id = getUniqueEventId();
+
+		HRESULT hr = SimConnect_Text(ghSimConnect, SIMCONNECT_TEXT_TYPE_PRINT_YELLOW, 10.0, id, message.length() + 1, *message);
+
+		if (NT_ERROR(hr))
+		{
+			handle_Error(isolate, hr);
+			return;
+		}
+
+		args.GetReturnValue().Set(v8::Boolean::New(isolate, SUCCEEDED(hr)));
+
+	}
+
+}
+
 void RequestSystemState(const v8::FunctionCallbackInfo<v8::Value> &args)
 {
 	if (ghSimConnect)
@@ -788,6 +812,7 @@ void Initialize(v8::Local<v8::Object> exports)
 	NODE_SET_METHOD(exports, "createDataDefinition", CreateDataDefinition);
 	NODE_SET_METHOD(exports, "flightLoad", FlightLoad);
 	NODE_SET_METHOD(exports, "isConnected", isConnected);
+	NODE_SET_METHOD(exports, "text", Text);
 }
 
 NODE_MODULE(addon, Initialize);
