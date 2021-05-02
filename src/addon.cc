@@ -176,9 +176,10 @@ void messageReceiver(uv_async_t *handle)
 }
 
 // Handles data requested with requestDataOnSimObject or requestDataOnSimObjectType
-void handleReceived_Data(Isolate *isolate, SIMCONNECT_RECV *pSimData, DWORD cbData)
+void handleReceived_Data(Isolate *isolate, SIMCONNECT_RECV *pData, DWORD cbData)
 {
-	SIMCONNECT_RECV_SIMOBJECT_DATA *pObjData = (SIMCONNECT_RECV_SIMOBJECT_DATA *)pSimData;
+
+	SIMCONNECT_RECV_SIMOBJECT_DATA *pObjData = (SIMCONNECT_RECV_SIMOBJECT_DATA *)pData;
 	int numVars = dataDefinitions[pObjData->dwDefineID].num_values;
 	std::vector<SIMCONNECT_DATATYPE> valTypes = dataDefinitions[pObjData->dwDefineID].datum_types;
 	std::vector<std::string> valIds = dataDefinitions[pObjData->dwDefineID].datum_names;
@@ -189,20 +190,21 @@ void handleReceived_Data(Isolate *isolate, SIMCONNECT_RECV *pSimData, DWORD cbDa
 	for (int i = 0; i < numVars; i++)
 	{
 		int varSize = 0;
-		v8::Local<v8::String> key = String::NewFromUtf8(isolate, valIds.at(i).c_str());
-		char *pData = ((char*)(&pObjData->dwData) + dataValueOffset);
 
 		if (valTypes[i] == SIMCONNECT_DATATYPE_STRINGV)
 		{
+			dataValueOffset += 8; // Not really sure why this is needed, but it fixes problems like this: "F-22 RapF-22 Raptor - 525th Fighter Squadron"
 			char *pOutString;
 			DWORD cbString;
-			HRESULT hr = SimConnect_RetrieveString(pSimData, cbData, pData, &pOutString, &cbString);
+			char *pStringv = ((char *)(&pObjData->dwData));
+			HRESULT hr = SimConnect_RetrieveString(pData, cbData, dataValueOffset + pStringv, &pOutString, &cbString);
 			if (NT_ERROR(hr))
 			{
 				handle_Error(isolate, hr);
 				return;
 			}
 
+			v8::Local<v8::String> key = String::NewFromUtf8(isolate, valIds.at(i).c_str()).FromMaybe(v8::Local<v8::String>());
 			try
 			{
 				v8::Local<v8::String> value = String::NewFromOneByte(isolate, (const uint8_t *)pOutString, v8::NewStringType::kNormal).ToLocalChecked();
@@ -218,39 +220,11 @@ void handleReceived_Data(Isolate *isolate, SIMCONNECT_RECV *pSimData, DWORD cbDa
 		}
 		else
 		{
+			//printf("------ %s -----\n", valIds.at(i).c_str());
 			varSize = sizeMap[valTypes[i]];
-			switch (valTypes[i]) {
-
-				case SIMCONNECT_DATATYPE_INT32:
-					result_list->Set(key, Number::New(isolate, *(int32_t *)pData));
-					break;
-
-				case SIMCONNECT_DATATYPE_INT64:
-					result_list->Set(key, Number::New(isolate, *(int64_t *)pData));
-					break;
-
-				case SIMCONNECT_DATATYPE_FLOAT32:
-					result_list->Set(key, Number::New(isolate, *(float *)pData));
-					break;
-
-				case SIMCONNECT_DATATYPE_FLOAT64:
-					result_list->Set(key, Number::New(isolate, *(double *)pData));
-					break;
-
-				case SIMCONNECT_DATATYPE_STRING8:
-				case SIMCONNECT_DATATYPE_STRING32:
-				case SIMCONNECT_DATATYPE_STRING64:
-				case SIMCONNECT_DATATYPE_STRING128:
-				case SIMCONNECT_DATATYPE_STRING256:
-				case SIMCONNECT_DATATYPE_STRING260:
-					{
-						v8::Local<v8::String> value = String::NewFromOneByte(isolate, (const uint8_t *)pData, v8::NewStringType::kNormal).ToLocalChecked();
-						result_list->Set(key, value);
-					}
-					break;
-				default:
-					break;
-			}
+			char *p = ((char *)(&pObjData->dwData) + dataValueOffset);
+			double *var = (double *)p;
+			result_list->Set(String::NewFromUtf8(isolate, valIds.at(i).c_str()).FromMaybe(v8::Local<v8::String>()), Number::New(isolate, *var));
 		}
 		dataValueOffset += varSize;
 	}
@@ -367,12 +341,12 @@ void handleReceived_SystemState(Isolate *isolate, SIMCONNECT_RECV *pData, DWORD 
 	SIMCONNECT_RECV_SYSTEM_STATE *pState = (SIMCONNECT_RECV_SYSTEM_STATE *)pData;
 
 	Local<Object> obj = Object::New(isolate);
-	obj->Set(String::NewFromUtf8(isolate, "integer"), Number::New(isolate, pState->dwInteger));
-	obj->Set(String::NewFromUtf8(isolate, "float"), Number::New(isolate, pState->fFloat));
-	obj->Set(String::NewFromUtf8(isolate, "string"), String::NewFromUtf8(isolate, pState->szString));
+	obj->Set(String::NewFromUtf8(isolate, "integer").FromMaybe(v8::Local<v8::String>()), Number::New(isolate, pState->dwInteger));
+	obj->Set(String::NewFromUtf8(isolate, "float").FromMaybe(v8::Local<v8::String>()), Number::New(isolate, pState->fFloat));
+	obj->Set(String::NewFromUtf8(isolate, "string").FromMaybe(v8::Local<v8::String>()), String::NewFromUtf8(isolate, "string").FromMaybe(v8::Local<v8::String>()));
 
 	Local<Value> argv[1] = {obj};
-	systemStateCallbacks[pState->dwRequestID]->Call(isolate->GetCurrentContext()->Global(), 1, argv);
+	systemStateCallbacks[openEventId]->Call(isolate->GetCurrentContext()->Global(), 1, argv);
 }
 
 void handleReceived_Quit(Isolate *isolate)
@@ -722,30 +696,48 @@ DataDefinition generateDataDefinition(Isolate *isolate, HANDLE hSimConnect, Loca
 				}
 
 				SIMCONNECT_DATATYPE datumType = SIMCONNECT_DATATYPE_FLOAT64; // Default type (double)
+				double epsilon;
+				float datumId;
+
+				if (len > 1)
+				{
+					hr = SimConnect_AddToDataDefinition(hSimConnect, definitionId, sDatumName, sUnitsName);
+					if (NT_ERROR(hr))
+					{
+						handle_Error(isolate, hr);
+						break;
+					}
+				}
 				if (len > 2)
 				{
 					int t = value->Get(2)->Int32Value(ctx).ToChecked();
 					datumType = SIMCONNECT_DATATYPE(t);
+					hr = SimConnect_AddToDataDefinition(hSimConnect, definitionId, sDatumName, sUnitsName, datumType);
+					if (NT_ERROR(hr))
+					{
+						handle_Error(isolate, hr);
+						break;
+					}
 				}
-
-				float epsilon = 0;
 				if (len > 3)
 				{
-				  epsilon = value->Get(3)->Int32Value(ctx).ToChecked();
+					epsilon = value->Get(3)->Int32Value(ctx).ToChecked();
+					hr = SimConnect_AddToDataDefinition(hSimConnect, definitionId, sDatumName, sUnitsName, datumType, epsilon);
+					if (NT_ERROR(hr))
+					{
+						handle_Error(isolate, hr);
+						break;
+					}
 				}
-
-				DWORD datumId = SIMCONNECT_UNUSED;
 				if (len > 4)
 				{
-				  datumId = value->Get(4)->Int32Value(ctx).ToChecked();
-				}
-
-				hr = SimConnect_AddToDataDefinition(hSimConnect, definitionId, sDatumName, sUnitsName, datumType, epsilon, datumId);
-
-				if (NT_ERROR(hr))
-				{
-					handle_Error(isolate, hr);
-					break;
+					datumId = value->Get(4)->Int32Value(ctx).ToChecked();
+					hr = SimConnect_AddToDataDefinition(hSimConnect, definitionId, sDatumName, sUnitsName, datumType, epsilon, datumId);
+					if (NT_ERROR(hr))
+					{
+						handle_Error(isolate, hr);
+						break;
+					}
 				}
 
 				std::string datumNameStr(sDatumName);
